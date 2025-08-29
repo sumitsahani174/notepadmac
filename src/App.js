@@ -79,6 +79,8 @@ const languageIcon = (lang) => {
       return <MarkdownIcon fontSize="small" />;
     case "json":
       return <CodeIcon fontSize="small" />;
+      case "sql":
+      return <CodeIcon fontSize="small" />;
     case "html":
       return <DescriptionIcon fontSize="small" />;
     case "css":
@@ -97,6 +99,20 @@ const languages = [
   { value: "json", label: "JSON" },
   { value: "html", label: "HTML" },
   { value: "css", label: "CSS" },
+  { value: "python", label: "Python" },
+  { value: "java", label: "Java" },
+  { value: "csharp", label: "C#" },
+  { value: "cpp", label: "C++" },
+  { value: "ruby", label: "Ruby" },
+  { value: "php", label: "PHP" },
+  { value: "go", label: "Go" },
+  { value: "rust", label: "Rust" },
+  { value: "swift", label: "Swift" },
+  { value: "kotlin", label: "Kotlin" },
+  { value: "sql", label: "SQL" },
+  { value: "xml", label: "XML" },
+  { value: "yaml", label: "YAML" },
+  
 ];
 
 function download(filename, text) {
@@ -226,7 +242,19 @@ export default function NotepadPlusPlusMUI() {
         ext === "ts" ? "typescript" :
         ext === "json" ? "json" :
         ext === "html" ? "html" :
-        ext === "css" ? "css" : "text";
+        ext === "css" ? "css" : 
+        ext === "sql" ? "sql" :
+        ext === "py" ? "python" :
+        ext === "java" ? "java" :
+        ext === "cs" ? "csharp" :
+        ext === "cpp" || ext === "cxx" || ext === "cc" ? "cpp" :
+        ext === "rb" ? "ruby" :
+        ext === "php" ? "php" :
+        ext === "go" ? "go" :
+        ext === "rs" ? "rust" :
+        ext === "swift" ? "swift" :
+        ext === "kt" ? "kotlin" :
+        "text";
 
       createFile({ name: file.name, language: langGuess, content: String(text) });
       setSnack({ open: true, message: `Opened ${file.name}` });
@@ -485,8 +513,8 @@ export default function NotepadPlusPlusMUI() {
         {/* Main Content */}
         <Box component="main" sx={{ flexGrow: 1, display: "flex", flexDirection: "column", height: "100vh" }}>
           <Toolbar />
-          <Box sx={{ borderTop: (t) => `1px solid ${t.palette.divider}`, flexGrow: 1, minHeight: 0 }}>
-            {activeFile ? (
+          <Box sx={{ height: 36 }} />
+          <Box sx={{ borderTop: (t) => `0px solid ${t.palette.divider}`, flexGrow: 1, minHeight: 0, pt: '36px' }}>            {activeFile ? (
               <Editor
                 language={activeFile.language === "text" ? undefined : activeFile.language}
                 value={activeFile.content}
