@@ -55,10 +55,7 @@ import TextSnippetIcon from "@mui/icons-material/TextSnippet";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import DeleteIcon from "@mui/icons-material/Delete";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
-import ContentPasteIcon from "@mui/icons-material/ContentPaste";
-import ContentCutIcon from "@mui/icons-material/ContentCut";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
-import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import DownloadIcon from "@mui/icons-material/Download";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
@@ -217,8 +214,6 @@ export default function NotepadPlusPlusMUI() {
   const [findText, setFindText] = useState("");
   const [replaceText, setReplaceText] = useState("");
 
-  // Language selection
-  const [langMenuEl, setLangMenuEl] = useState(null);
 
   // ============== Actions ==============
   const createFile = useCallback((template = { name: "untitled.txt", language: "text", content: "" }) => {
