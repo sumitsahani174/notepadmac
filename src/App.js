@@ -32,12 +32,12 @@ import {
   FormControl,
   InputLabel,
   Select,
+  Badge,
 } from "@mui/material";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
 import MenuIcon from "@mui/icons-material/Menu";
 import AddIcon from "@mui/icons-material/NoteAdd";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
-import SaveIcon from "@mui/icons-material/Save";
 import SaveAsIcon from "@mui/icons-material/SaveAs";
 import UndoIcon from "@mui/icons-material/Undo";
 import RedoIcon from "@mui/icons-material/Redo";
@@ -63,8 +63,29 @@ import { styled } from "@mui/material/styles";
 import { Editor } from "@monaco-editor/react";
 
 // ============== Helpers ==============
-const DEFAULT_CONTENT = "// Welcome to Notepad++-like Editor (React + MUI)\n// New file ready. Happy coding!\n";
-const STORAGE_KEY = "mui-npp-project";
+const DEFAULT_CONTENT = "// Welcome to NotepadMac\n// New file ready. Happy coding!\n";
+const STORAGE_KEY = "notepadmac-project";
+
+const createId = () => {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `file-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+};
+
+const createFileRecord = ({ name = "untitled.txt", language = "text", content = "" } = {}) => ({
+  id: createId(),
+  name,
+  language,
+  content,
+  savedContent: content,
+});
+
+const normalizeFiles = (items) =>
+  items.map((file) => ({
+    ...file,
+    savedContent: file.savedContent ?? file.content ?? "",
+  }));
 
 const languageIcon = (lang) => {
   switch (lang) {
@@ -76,7 +97,7 @@ const languageIcon = (lang) => {
       return <MarkdownIcon fontSize="small" />;
     case "json":
       return <CodeIcon fontSize="small" />;
-      case "sql":
+    case "sql":
       return <CodeIcon fontSize="small" />;
     case "html":
       return <DescriptionIcon fontSize="small" />;
@@ -109,17 +130,18 @@ const languages = [
   { value: "sql", label: "SQL" },
   { value: "xml", label: "XML" },
   { value: "yaml", label: "YAML" },
-  
 ];
 
 function download(filename, text) {
   const element = document.createElement("a");
   const file = new Blob([text], { type: "text/plain;charset=utf-8" });
-  element.href = URL.createObjectURL(file);
+  const url = URL.createObjectURL(file);
+  element.href = url;
   element.download = filename;
   document.body.appendChild(element);
   element.click();
   document.body.removeChild(element);
+  URL.revokeObjectURL(url);
 }
 
 function readFileAsText(file) {
@@ -179,11 +201,9 @@ export default function NotepadPlusPlusMUI() {
   const [files, setFiles] = useState(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
-      try { return JSON.parse(saved); } catch {}
+      try { return normalizeFiles(JSON.parse(saved)); } catch {}
     }
-    return [
-      { id: crypto.randomUUID(), name: "untitled.txt", language: "text", content: DEFAULT_CONTENT, history: [], future: [] },
-    ];
+    return [createFileRecord({ name: "untitled.txt", language: "text", content: DEFAULT_CONTENT })];
   });
   const [activeId, setActiveId] = useState(() => files[0]?.id || null);
 
@@ -213,11 +233,16 @@ export default function NotepadPlusPlusMUI() {
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [findText, setFindText] = useState("");
   const [replaceText, setReplaceText] = useState("");
+  const [fileDialog, setFileDialog] = useState({ open: false, type: null, targetId: null, name: "", touched: false });
+
+  const closeFileDialog = () => {
+    setFileDialog({ open: false, type: null, targetId: null, name: "", touched: false });
+  };
 
 
   // ============== Actions ==============
   const createFile = useCallback((template = { name: "untitled.txt", language: "text", content: "" }) => {
-    const newFile = { id: crypto.randomUUID(), history: [], future: [], ...template };
+    const newFile = createFileRecord(template);
     setFiles((prev) => [...prev, newFile]);
     setActiveId(newFile.id);
   }, []);
@@ -257,19 +282,45 @@ export default function NotepadPlusPlusMUI() {
     input.click();
   }, [createFile]);
 
-  const saveFile = useCallback(() => {
+  const downloadActiveFile = useCallback(() => {
     if (!activeFile) return;
     download(activeFile.name, activeFile.content);
-    setSnack({ open: true, message: `Saved ${activeFile.name}` });
+    setFiles((prev) => prev.map((f) => (f.id === activeFile.id ? { ...f, savedContent: f.content } : f)));
+    setSnack({ open: true, message: `Downloaded ${activeFile.name}` });
   }, [activeFile]);
 
-  const saveAs = useCallback(() => {
+  const openSaveAsDialog = useCallback(() => {
     if (!activeFile) return;
-    const newName = prompt("Save As:", activeFile.name) || activeFile.name;
-    download(newName, activeFile.content);
-    setFiles((prev) => prev.map((f) => (f.id === activeFile.id ? { ...f, name: newName } : f)));
-    setSnack({ open: true, message: `Saved as ${newName}` });
+    setFileDialog({ open: true, type: "saveAs", targetId: activeFile.id, name: activeFile.name, touched: false });
   }, [activeFile]);
+
+  const openRenameDialog = useCallback((file) => {
+    if (!file) return;
+    setFileDialog({ open: true, type: "rename", targetId: file.id, name: file.name, touched: false });
+  }, []);
+
+  const submitFileDialog = useCallback(() => {
+    const trimmedName = fileDialog.name.trim();
+    if (!trimmedName) {
+      setFileDialog((prev) => ({ ...prev, touched: true }));
+      return;
+    }
+    const target = files.find((file) => file.id === fileDialog.targetId);
+    if (!target) {
+      closeFileDialog();
+      return;
+    }
+
+    if (fileDialog.type === "saveAs") {
+      download(trimmedName, target.content);
+      setFiles((prev) => prev.map((f) => (f.id === target.id ? { ...f, name: trimmedName, savedContent: f.content } : f)));
+      setSnack({ open: true, message: `Downloaded as ${trimmedName}` });
+    } else {
+      setFiles((prev) => prev.map((f) => (f.id === target.id ? { ...f, name: trimmedName } : f)));
+      setSnack({ open: true, message: `Renamed to ${trimmedName}` });
+    }
+    closeFileDialog();
+  }, [fileDialog, files]);
 
   const closeTab = useCallback((id) => {
     setFiles((prev) => prev.filter((f) => f.id !== id));
@@ -286,10 +337,6 @@ export default function NotepadPlusPlusMUI() {
       if (f.id !== id) return f;
       return { ...f, content };
     }));
-  }, []);
-
-  const renameFile = useCallback((id, name) => {
-    setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, name } : f)));
   }, []);
 
   const changeLanguage = useCallback((id, language) => {
@@ -330,29 +377,29 @@ export default function NotepadPlusPlusMUI() {
   useEffect(() => {
     const onKey = (e) => {
       const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); saveFile(); }
+      if (mod && e.shiftKey && e.key.toLowerCase() === "s") { e.preventDefault(); openSaveAsDialog(); return; }
+      if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); downloadActiveFile(); }
       if (mod && e.key.toLowerCase() === "o") { e.preventDefault(); openLocalFile(); }
       if (mod && e.key.toLowerCase() === "n") { e.preventDefault(); createFile(); }
       if (mod && e.key.toLowerCase() === "f") { e.preventDefault(); handleFind(); }
       if (mod && e.key.toLowerCase() === "h") { e.preventDefault(); handleReplace(); }
-      if (mod && e.shiftKey && e.key.toLowerCase() === "s") { e.preventDefault(); saveAs(); }
       if (mod && e.key === "Tab") { e.preventDefault();
         // Next tab
         const i = activeIndex;
-        const next = files[(i + 1) % files.length];
-        setActiveId(next.id);
+        const next = files.length ? files[(i + 1) % files.length] : null;
+        if (next) setActiveId(next.id);
       }
       if (mod && e.shiftKey && e.key.toLowerCase() === "tab") { e.preventDefault();
         // Prev tab
         const i = activeIndex;
-        const prev = files[(i - 1 + files.length) % files.length];
-        setActiveId(prev.id);
+        const prev = files.length ? files[(i - 1 + files.length) % files.length] : null;
+        if (prev) setActiveId(prev.id);
       }
       if (mod && e.key.toLowerCase() === "w") { e.preventDefault(); if (activeFile) closeTab(activeFile.id); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [files, activeIndex, activeFile, saveFile, openLocalFile, createFile, closeTab, saveAs]);
+  }, [files, activeIndex, activeFile, downloadActiveFile, openLocalFile, createFile, closeTab, openSaveAsDialog]);
 
   // Monaco handlers
   const handleEditorMount = (editor, monaco) => {
@@ -382,7 +429,7 @@ export default function NotepadPlusPlusMUI() {
 
   const duplicateFile = () => {
     if (!contextTarget) return;
-    const copy = { ...contextTarget, id: crypto.randomUUID(), name: contextTarget.name.replace(/(\.[^.]+)?$/, " copy$1") };
+    const copy = { ...contextTarget, id: createId(), name: contextTarget.name.replace(/(\.[^.]+)?$/, " copy$1") };
     setFiles((prev) => [...prev, copy]);
     setSnack({ open: true, message: `Duplicated ${contextTarget.name}` });
     closeContext();
@@ -398,36 +445,36 @@ export default function NotepadPlusPlusMUI() {
         {/* AppBar */}
         <AppBar position="fixed" elevation={1} color="default" sx={{ borderBottom: (t) => `1px solid ${t.palette.divider}` }}>
           <Toolbar variant="dense" sx={{ gap: 1 }}>
-            <IconButton edge="start" onClick={() => setDrawerOpen((v) => !v)}>
+            <IconButton edge="start" aria-label="Toggle explorer" onClick={() => setDrawerOpen((v) => !v)}>
               <MenuIcon />
             </IconButton>
-            <Typography variant="subtitle1" sx={{ fontWeight: 600, mr: 2 }}>N++ (React + MUI)</Typography>
+            <Typography variant="subtitle1" sx={{ fontWeight: 600, mr: 2 }}>NotepadMac</Typography>
 
-            <Tooltip title="New (Ctrl/Cmd + N)"><span><IconButton onClick={() => createFile()}><AddIcon /></IconButton></span></Tooltip>
-            <Tooltip title="Open (Ctrl/Cmd + O)"><span><IconButton onClick={openLocalFile}><FolderOpenIcon /></IconButton></span></Tooltip>
-            <Tooltip title="Save (Ctrl/Cmd + S)"><span><IconButton onClick={saveFile}><SaveIcon /></IconButton></span></Tooltip>
-            <Tooltip title="Save As (Ctrl/Cmd + Shift + S)"><span><IconButton onClick={saveAs}><SaveAsIcon /></IconButton></span></Tooltip>
+            <Tooltip title="New (Ctrl/Cmd + N)"><span><IconButton aria-label="New file" onClick={() => createFile()}><AddIcon /></IconButton></span></Tooltip>
+            <Tooltip title="Open (Ctrl/Cmd + O)"><span><IconButton aria-label="Open local file" onClick={openLocalFile}><FolderOpenIcon /></IconButton></span></Tooltip>
+            <Tooltip title="Download (Ctrl/Cmd + S)"><span><IconButton aria-label="Download active file" onClick={downloadActiveFile}><DownloadIcon /></IconButton></span></Tooltip>
+            <Tooltip title="Download As (Ctrl/Cmd + Shift + S)"><span><IconButton aria-label="Download active file as" onClick={openSaveAsDialog}><SaveAsIcon /></IconButton></span></Tooltip>
             <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
-            <Tooltip title="Undo"><span><IconButton onClick={handleUndo}><UndoIcon /></IconButton></span></Tooltip>
-            <Tooltip title="Redo"><span><IconButton onClick={handleRedo}><RedoIcon /></IconButton></span></Tooltip>
+            <Tooltip title="Undo"><span><IconButton aria-label="Undo" onClick={handleUndo}><UndoIcon /></IconButton></span></Tooltip>
+            <Tooltip title="Redo"><span><IconButton aria-label="Redo" onClick={handleRedo}><RedoIcon /></IconButton></span></Tooltip>
             <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
-            <Tooltip title="Find (Ctrl/Cmd + F)"><span><IconButton onClick={handleFind}><FindInPageIcon /></IconButton></span></Tooltip>
-            <Tooltip title="Replace (Ctrl/Cmd + H)"><span><IconButton onClick={handleReplace}><FindReplaceIcon /></IconButton></span></Tooltip>
+            <Tooltip title="Find (Ctrl/Cmd + F)"><span><IconButton aria-label="Find" onClick={handleFind}><FindInPageIcon /></IconButton></span></Tooltip>
+            <Tooltip title="Replace (Ctrl/Cmd + H)"><span><IconButton aria-label="Find and replace" onClick={handleReplace}><FindReplaceIcon /></IconButton></span></Tooltip>
             <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
-            <Tooltip title="Word Wrap"><span><IconButton onClick={() => setWordWrap((w) => (w === "on" ? "off" : "on"))}><WrapTextIcon /></IconButton></span></Tooltip>
+            <Tooltip title="Word Wrap"><span><IconButton aria-label="Toggle word wrap" onClick={() => setWordWrap((w) => (w === "on" ? "off" : "on"))}><WrapTextIcon /></IconButton></span></Tooltip>
 
             <Box sx={{ flexGrow: 1 }} />
 
             <ToggleButtonGroup size="small" value={mode} exclusive onChange={(_, v) => v && setMode(v)}>
-              <ToggleButton value="light"><LightModeIcon fontSize="small" /></ToggleButton>
-              <ToggleButton value="dark"><DarkModeIcon fontSize="small" /></ToggleButton>
+              <ToggleButton value="light" aria-label="Light mode"><LightModeIcon fontSize="small" /></ToggleButton>
+              <ToggleButton value="dark" aria-label="Dark mode"><DarkModeIcon fontSize="small" /></ToggleButton>
             </ToggleButtonGroup>
 
-            <IconButton onClick={handleMenu}>
+            <IconButton aria-label="More actions" onClick={handleMenu}>
               <MoreVertIcon />
             </IconButton>
             <Menu anchorEl={anchorEl} open={menuOpen} onClose={handleMenuClose}>
-              <MenuItem onClick={() => { handleMenuClose(); setSnack({ open: true, message: "Notepad++-like demo. Built with React, MUI, Monaco." }); }}>
+              <MenuItem onClick={() => { handleMenuClose(); setSnack({ open: true, message: "NotepadMac is a local-first browser notepad built with React, MUI, and Monaco." }); }}>
                 <InfoOutlinedIcon fontSize="small" style={{ marginRight: 8 }} /> About
               </MenuItem>
               <MenuItem onClick={() => { handleMenuClose(); localStorage.removeItem(STORAGE_KEY); setSnack({ open: true, message: "Cleared local project cache" }); }}>
@@ -451,10 +498,29 @@ export default function NotepadPlusPlusMUI() {
                   icon={languageIcon(f.language)}
                   label={
                     <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                      {f.content !== f.savedContent && (
+                        <Tooltip title="Unsaved changes since last download">
+                          <Badge color="warning" variant="dot" aria-label={`${f.name} has unsaved changes`} />
+                        </Tooltip>
+                      )}
                       <span style={{ maxWidth: 160, textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>{f.name}</span>
-                      <IconButton size="small" onClick={(e) => { e.stopPropagation(); closeTab(f.id); }}>
+                      <Box
+                        component="span"
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Close ${f.name}`}
+                        sx={{ display: "inline-flex", p: 0.25, borderRadius: 1 }}
+                        onClick={(e) => { e.stopPropagation(); closeTab(f.id); }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            closeTab(f.id);
+                          }
+                        }}
+                      >
                         <CloseIcon fontSize="inherit" />
-                      </IconButton>
+                      </Box>
                     </Box>
                   }
                   sx={{ minHeight: 36 }}
@@ -479,9 +545,9 @@ export default function NotepadPlusPlusMUI() {
           <SidebarHeader>
             <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>Explorer</Typography>
             <Box sx={{ display: "flex", gap: 1 }}>
-              <Tooltip title="New File"><IconButton size="small" onClick={() => createFile()}><AddIcon fontSize="inherit" /></IconButton></Tooltip>
-              <Tooltip title="Open Local File"><IconButton size="small" onClick={openLocalFile}><UploadFileIcon fontSize="inherit" /></IconButton></Tooltip>
-              <Tooltip title="Download Active"><IconButton size="small" onClick={saveFile}><DownloadIcon fontSize="inherit" /></IconButton></Tooltip>
+              <Tooltip title="New File"><IconButton size="small" aria-label="New file" onClick={() => createFile()}><AddIcon fontSize="inherit" /></IconButton></Tooltip>
+              <Tooltip title="Open Local File"><IconButton size="small" aria-label="Open local file" onClick={openLocalFile}><UploadFileIcon fontSize="inherit" /></IconButton></Tooltip>
+              <Tooltip title="Download Active"><IconButton size="small" aria-label="Download active file" onClick={downloadActiveFile}><DownloadIcon fontSize="inherit" /></IconButton></Tooltip>
             </Box>
           </SidebarHeader>
           <Divider />
@@ -492,15 +558,23 @@ export default function NotepadPlusPlusMUI() {
                   <ListItemIcon>
                     {languageIcon(f.language)}
                   </ListItemIcon>
-                  <ListItemText primary={f.name} secondary={f.language} />
+                  <ListItemText primary={f.name} secondary={`${f.language}${f.content !== f.savedContent ? " - edited" : ""}`} />
                 </ListItemButton>
               </ListItem>
             ))}
           </List>
           <Menu anchorEl={contextAnchor} open={openContext} onClose={closeContext}>
-            <MenuItem onClick={() => { closeContext(); const newName = prompt("Rename file", contextTarget?.name); if (newName) renameFile(contextTarget.id, newName); }}>Rename</MenuItem>
+            <MenuItem onClick={() => { const target = contextTarget; closeContext(); openRenameDialog(target); }}>Rename</MenuItem>
             <MenuItem onClick={duplicateFile}><ContentCopyIcon fontSize="small" sx={{ mr: 1 }} /> Duplicate</MenuItem>
-            <MenuItem onClick={() => { download(contextTarget.name, contextTarget.content); closeContext(); }}><DownloadIcon fontSize="small" sx={{ mr: 1 }} /> Download</MenuItem>
+            <MenuItem onClick={() => {
+              const target = contextTarget;
+              if (target) {
+                download(target.name, target.content);
+                setFiles((prev) => prev.map((f) => (f.id === target.id ? { ...f, savedContent: f.content } : f)));
+                setSnack({ open: true, message: `Downloaded ${target.name}` });
+              }
+              closeContext();
+            }}><DownloadIcon fontSize="small" sx={{ mr: 1 }} /> Download</MenuItem>
             <MenuItem onClick={deleteFile} sx={{ color: "error.main" }}><DeleteIcon fontSize="small" sx={{ mr: 1 }} /> Delete</MenuItem>
           </Menu>
         </Drawer>
@@ -538,7 +612,7 @@ export default function NotepadPlusPlusMUI() {
           {/* Status Bar */}
           <StatusBar>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-              <IconButton size="small" onClick={() => setDrawerOpen((v) => !v)}><ArrowBackIcon fontSize="inherit" /></IconButton>
+              <IconButton size="small" aria-label="Toggle explorer" onClick={() => setDrawerOpen((v) => !v)}><ArrowBackIcon fontSize="inherit" /></IconButton>
               <Divider orientation="vertical" flexItem />
               <Typography>Ln {cursor.line}, Col {cursor.column}</Typography>
               <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
@@ -547,6 +621,14 @@ export default function NotepadPlusPlusMUI() {
               <Typography sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
                 {activeFile && languageIcon(activeFile.language)} {activeFile?.language}
               </Typography>
+              {activeFile && (
+                <>
+                  <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
+                  <Typography color={activeFile.content !== activeFile.savedContent ? "warning.main" : "text.secondary"}>
+                    {activeFile.content !== activeFile.savedContent ? "Edited" : "Downloaded"}
+                  </Typography>
+                </>
+              )}
             </Box>
             {activeFile && (
               <Box sx={{ display: "flex", alignItems: "center", gap: 1, pr: 1 }}>
@@ -586,6 +668,29 @@ export default function NotepadPlusPlusMUI() {
             <Button onClick={() => setReplaceOpen(false)}>Close</Button>
             <Button onClick={performFind}>Find</Button>
             <Button variant="contained" onClick={performReplaceAll}>Replace All</Button>
+          </DialogActions>
+        </Dialog>
+
+        <Dialog open={fileDialog.open} onClose={closeFileDialog} maxWidth="xs" fullWidth>
+          <DialogTitle>{fileDialog.type === "saveAs" ? "Download As" : "Rename File"}</DialogTitle>
+          <DialogContent>
+            <TextField
+              autoFocus
+              fullWidth
+              label="File name"
+              margin="dense"
+              value={fileDialog.name}
+              error={fileDialog.touched && !fileDialog.name.trim()}
+              helperText={fileDialog.touched && !fileDialog.name.trim() ? "File name is required." : " "}
+              onChange={(e) => setFileDialog((prev) => ({ ...prev, name: e.target.value, touched: true }))}
+              onKeyDown={(e) => { if (e.key === "Enter") submitFileDialog(); }}
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={closeFileDialog}>Cancel</Button>
+            <Button variant="contained" onClick={submitFileDialog}>
+              {fileDialog.type === "saveAs" ? "Download" : "Rename"}
+            </Button>
           </DialogActions>
         </Dialog>
 
